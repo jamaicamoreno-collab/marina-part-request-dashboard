@@ -64,7 +64,10 @@ function extractAllText(msg) {
   return parts.join('\n');
 }
 
-function extractTicketId(text) {
+function extractD365Url(text) {
+  const m = text?.match(/https:\/\/joby-aviation-main\.cloud\.databricks\.com\/dashboardsv3[^\s|>"]*/);
+  return m?.[0] || null;
+}
   return text?.match(/IVJN-\d+/i)?.[0]?.toUpperCase() || null;
 }
 
@@ -215,6 +218,7 @@ export default async function handler(req, res) {
         location:       'RNDCONSUME',
         dateNeeded:     parseLabel(full, 'Date Needed') || '—',
         status:         deriveStatus(threads[i], msg),
+        d365Url:        extractD365Url(full),
         threadActivity: extractThreadNote(threads[i]),
         threadUrl:      buildPermalink(msg.ts),
         replyCount:     Math.max(0, threads[i].length - 1),
