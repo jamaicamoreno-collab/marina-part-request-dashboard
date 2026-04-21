@@ -20,6 +20,7 @@ async function fetchChannelMessages() {
     const data = await slackGet('conversations.history', {
       channel: CHANNEL_ID,
       limit: 100,
+      include_all_metadata: true,
       ...(cursor ? { cursor } : {}),
     });
     if (!data.ok) break;
@@ -95,8 +96,14 @@ function parsePriority(text) {
   return 'asready';
 }
 
-function deriveStatus(replies) {
-  // Only check replies after the first message (skip the original kit request)
+function deriveStatus(replies, originalMsg) {
+  // Check emoji reactions on the original message first
+  const reactions = (originalMsg.reactions || []).map(r => r.name.toLowerCase());
+  if (reactions.some(r => ['white_check_mark','heavy_check_mark','done','approved','check','✅','complete'].includes(r))) return 'done';
+  if (reactions.some(r => ['approved','thumbsup','+1'].includes(r))) return 'approved';
+  if (reactions.some(r => ['x','no_entry','cancelled','cancel'].includes(r))) return 'cancelled';
+
+  // Then check reply text
   const replyText = replies.slice(1).map(r => extractAllText(r)).join('\n').toLowerCase();
   if (/staged|now complete|pick.?up rack|outbound rack|transfer rack|transfer pick|handed to courier|ready for pickup|fulfilled|sent out|delivered|kitted/i.test(replyText)) return 'done';
   if (/:approved:|approved|\u2705|looks good|good to go|confirmed|permission granted/i.test(replyText)) return 'approved';
@@ -189,7 +196,7 @@ export default async function handler(req, res) {
         warehouse:      parseLabel(full, 'Destination Warehouse') || '—',
         location:       'RNDCONSUME',
         dateNeeded:     parseLabel(full, 'Date Needed') || '—',
-        status:         deriveStatus(threads[i]),
+        status:         deriveStatus(threads[i], msg),
         threadActivity: extractThreadNote(threads[i]),
         threadUrl:      buildPermalink(msg.ts),
         replyCount:     Math.max(0, threads[i].length - 1),
