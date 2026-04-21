@@ -96,10 +96,11 @@ function parsePriority(text) {
 }
 
 function deriveStatus(replies) {
-  const text = replies.map(r => extractAllText(r)).join('\n').toLowerCase();
-  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier|transfer rack|transfer pick|now complete|ready for pickup|fulfilled|sent out|delivered|kitted/i.test(text)) return 'done';
-  if (/:approved:|approved|\u2705|looks good|good to go|confirmed|permission granted/i.test(text)) return 'approved';
-  if (/cancel/i.test(text)) return 'cancelled';
+  // Only check replies after the first message (skip the original kit request)
+  const replyText = replies.slice(1).map(r => extractAllText(r)).join('\n').toLowerCase();
+  if (/staged|now complete|pick.?up rack|outbound rack|transfer rack|transfer pick|handed to courier|ready for pickup|fulfilled|sent out|delivered|kitted/i.test(replyText)) return 'done';
+  if (/:approved:|approved|\u2705|looks good|good to go|confirmed|permission granted/i.test(replyText)) return 'approved';
+  if (/cancel/i.test(replyText)) return 'cancelled';
   return 'pending';
 }
 
