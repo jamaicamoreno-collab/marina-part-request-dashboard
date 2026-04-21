@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+function JournalIdChip({ id, url }) {
+  const href = url || `https://joby-aviation-main.cloud.databricks.com/dashboardsv3/01f0bb4345f41e22836f1bd7593acb79/published?o=1086519755754860&f_e9afd8fa~journal-id=${id}`;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#185FA5",background:"#E6F1FB",padding:"2px 8px",borderRadius:5,fontFamily:"monospace",textDecoration:"none",border:"0.5px solid #B5D4F4",display:"inline-flex",alignItems:"center",gap:4}}>{id} ↗</a>
+  );
+}
 
 const PRIORITY = {
   linedown:{ label:"Line Down", bg:"#FCEBEB", text:"#A32D2D", dot:"#E24B4A" },
