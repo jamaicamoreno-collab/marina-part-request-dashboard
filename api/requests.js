@@ -17,7 +17,7 @@ async function slackGet(path, params = {}) {
 async function fetchChannelMessages() {
   const msgs = [];
   let cursor;
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 4; i++) {
     const data = await slackGet('conversations.history', {
       channel: CHANNEL_ID,
       limit: 100,
@@ -35,7 +35,7 @@ async function fetchThread(ts) {
   const data = await slackGet('conversations.replies', {
     channel: CHANNEL_ID,
     ts,
-    limit: 50,
+    limit: 100,
   });
   return data.messages || [];
 }
@@ -99,7 +99,7 @@ function parsePriority(text) {
 
 function deriveStatus(replies) {
   const text = replies.map(r => extractAllText(r)).join('\n').toLowerCase();
-  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier|ready for pickup|fulfilled|it.?s out|sent out|on its way|delivered|ready to go|kitted|picked up|rack/i.test(text)) return 'done';
+  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier|transfer rack|ready for pickup|fulfilled|sent out|delivered|kitted/i.test(text)) return 'done';
   if (/:approved:|approved|\u2705|looks good|good to go|confirmed|permission granted/i.test(text)) return 'approved';
   if (/cancel/i.test(text)) return 'cancelled';
   return 'pending';
