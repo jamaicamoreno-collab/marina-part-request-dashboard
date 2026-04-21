@@ -70,34 +70,26 @@ function extractAllText(msg) {
   return parts.join('\n');
 }
 
-// ── User name cache ────────────────────────────────────────────────────────
-const userCache = {};
-async function resolveUserId(userId) {
-  if (!userId) return null;
-  if (userCache[userId]) return userCache[userId];
-  try {
-    const data = await slackGet('users.info', { user: userId });
-    const name = data.user?.profile?.display_name ||
-                 data.user?.profile?.real_name ||
-                 data.user?.real_name ||
-                 userId;
-    userCache[userId] = name;
-    return name;
-  } catch {
-    return userId;
-  }
-}
-
 // ── Parse helpers ──────────────────────────────────────────────────────────
 function extractTicketId(text) {
   return text?.match(/IVJN-\d+/i)?.[0]?.toUpperCase() || null;
 }
 
-function extractUserIdFromText(text) {
-  // Match <@U123ABC> format
-  const m = text?.match(/\*Requester:\*[^<]*<@([A-Z0-9]+)(?:\|[^>]*)?>/) ||
-            text?.match(/Requester[^<]*<@([A-Z0-9]+)(?:\|[^>]*)?>/);
-  return m?.[1] || null;
+function parseRequester(text) {
+  if (!text) return 'Unknown';
+  // Format 1: *Requester:*\n<@U123|display_name>
+  const m1 = text.match(/\*Requester:\*\s*\n<@[A-Z0-9]+\|([^>]+)>/);
+  if (m1) return m1[1];
+  // Format 2: *Requester:*\n<mailto:email|name>
+  const m2 = text.match(/\*Requester:\*\s*\n<mailto:[^|]+\|([^>]+)>/);
+  if (m2) return m2[1];
+  // Format 3: Requester field with just <@U123> no pipe — use ID as fallback
+  const m3 = text.match(/\*Requester:\*\s*\n<@([A-Z0-9]+)>/);
+  if (m3) return m3[1];
+  // Format 4: plain text after Requester label
+  const m4 = text.match(/\*Requester:\*\s*\n([^\n<*@]{2,50})/);
+  if (m4) return m4[1].trim();
+  return 'Unknown';
 }
 
 // Extract value after a label like "*Requester:*\n" or "Requester: "
@@ -206,14 +198,10 @@ export default async function handler(req, res) {
         if (!allText.includes(MARINA_GROUP) && !allText.includes('marina-mpms')) return null;
 
         const fullText  = extractAllText(msg);
-        const userId    = extractUserIdFromText(fullText);
-        const requester = userId
-          ? await resolveUserId(userId)
-          : parseLabel(fullText, 'Requester') || 'Unknown';
 
         return {
           id:             extractTicketId(fullText) || msg.ts,
-          requester:      requester,
+          requester:      parseRequester(fullText),
           timestamp:      new Date(parseFloat(msg.ts) * 1000).toISOString(),
           priority:       parsePriority(fullText),
           warehouse:      parseLabel(fullText, 'Destination Warehouse') || '—',
