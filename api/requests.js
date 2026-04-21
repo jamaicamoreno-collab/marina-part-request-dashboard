@@ -149,8 +149,8 @@ export default async function handler(req, res) {
              ts > sevenDaysAgo;
     });
 
-    // Limit to 12 to avoid Vercel timeout
-    const limited = rndRequests.slice(0, 12);
+    // Limit to 20 to avoid Vercel timeout
+    const limited = rndRequests.slice(0, 20);
 
     // Fetch threads in parallel
     const threads = await Promise.all(limited.map(m => fetchThread(m.ts)));
@@ -160,7 +160,7 @@ export default async function handler(req, res) {
       limited
         .map(m => extractRequesterId(extractAllText(m)))
         .filter(Boolean)
-    )].slice(0, 12);
+    )].slice(0, 20);
 
     // Resolve user names in parallel
     const userMap = {};
