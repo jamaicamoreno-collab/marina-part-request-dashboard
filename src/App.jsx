@@ -12,15 +12,6 @@ const STATUS_MAP = {
   cancelled: { label:"Cancelled",      bg:"#F1EFE8", text:"#5F5E5A", dot:"#888780" },
 };
 
-// ── Update this table path once your IVJN table exists in Databricks ────────
-const DATABRICKS_HOST = "https://joby-aviation-main.cloud.databricks.com";
-const DATABRICKS_TABLE = "hive_metastore.default.inventory_journal"; // ← update this
-
-function buildDatabricksUrl(journalId) {
-  const sql = `SELECT * FROM ${DATABRICKS_TABLE} WHERE journal_id = '${journalId}'`;
-  return `${DATABRICKS_HOST}/sql/editor?q=${encodeURIComponent(sql)}`;
-}
-
 function hoursOld(ts) { return (Date.now() - new Date(ts)) / 36e5; }
 function isOverdue(dn) { return new Date(dn + "T23:59:59") < new Date(); }
 function isAgeAlert(r) { return r.status === "pending" && hoursOld(r.timestamp) > 24; }
@@ -69,18 +60,15 @@ function StatusBadge({ status, onChange }) {
   );
 }
 
-// ── Clickable IVJN ID chip that links to Databricks ─────────────────────────
-function JournalIdChip({ id }) {
+function JournalIdChip({ id, url }) {
+  const href = url || `https://joby-aviation-main.cloud.databricks.com/dashboardsv3/01f0bb4345f41e22836f1bd7593acb79/published?o=1086519755754860&f_e9afd8fa~journal-id=${id}&f_958df5fc~journal-id=${id}&f_5e39a936~97580db1=${id}`;
   return (
     <a
-      href={buildDatabricksUrl(id)}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
-      title={`Open ${id} in Databricks SQL Editor`}
+      title={`Open ${id} in Databricks`}
       style={{
-        display:"inline-flex",
-        alignItems:"center",
-        gap:4,
         fontSize:11,
         color:"#185FA5",
         background:"#E6F1FB",
@@ -89,18 +77,19 @@ function JournalIdChip({ id }) {
         fontFamily:"monospace",
         textDecoration:"none",
         border:"0.5px solid #B5D4F4",
-        transition:"background 0.15s",
+        display:"inline-flex",
+        alignItems:"center",
+        gap:4,
         cursor:"pointer",
       }}
-      onMouseEnter={e=>{e.currentTarget.style.background="#cfe3f8";}}
-      onMouseLeave={e=>{e.currentTarget.style.background="#E6F1FB";}}
+      onMouseEnter={e=>e.currentTarget.style.background="#cfe3f8"}
+      onMouseLeave={e=>e.currentTarget.style.background="#E6F1FB"}
     >
       {id}
-      {/* Databricks logo icon */}
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{flexShrink:0,opacity:0.7}}>
-        <path d="M12 2L2 7l10 5 10-5-10-5z" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M2 17l10 5 10-5" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M2 12l10 5 10-5" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
       </svg>
     </a>
   );
@@ -204,11 +193,9 @@ export default function App() {
 
       <div style={{maxWidth:860,margin:"0 auto",padding:"20px 16px"}}>
 
-        {/* Alert banners */}
         {counts.aged>0&&<div style={{background:"#FAEEDA",border:"0.5px solid #EF9F27",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:"#854F0B",fontWeight:500}}>⏰ {counts.aged} request{counts.aged>1?"s":""} pending over 24h — needs attention</span></div>}
         {counts.overdue>0&&<div style={{background:"#FCEBEB",border:"0.5px solid #E24B4A",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:"#A32D2D",fontWeight:500}}>⚠ {counts.overdue} request{counts.overdue>1?"s":""} past Date Needed — action required</span></div>}
 
-        {/* Header */}
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
           <div>
             <h1 style={{fontSize:16,fontWeight:500,color:"#1a1a1a",margin:"0 0 2px"}}>Kit requests · @marina-mpms tagged</h1>
@@ -226,13 +213,9 @@ export default function App() {
           </div>
         </div>
 
-        {/* Error */}
         {error&&<div style={{background:"#FCEBEB",border:"0.5px solid #E24B4A",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#A32D2D"}}>⚠ {error}</div>}
-
-        {/* Loading */}
         {loading&&<div style={{textAlign:"center",padding:"3rem",color:"#aaa",fontSize:14}}>Loading from Slack...</div>}
 
-        {/* Metrics */}
         {!loading&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:14}}>
           {metrics.map(m=>(
             <div key={m.label} style={{background:"#fff",borderRadius:8,padding:"10px 14px",border:"0.5px solid #e5e5e3"}}>
@@ -242,7 +225,6 @@ export default function App() {
           ))}
         </div>}
 
-        {/* Filters */}
         {!loading&&<div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
           {["pending","approved","done","cancelled","all"].map(f=>(
             <button key={f} onClick={()=>setFilter(f)}
@@ -256,7 +238,6 @@ export default function App() {
           ))}
         </div>}
 
-        {/* Cards */}
         {!loading&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
           {sorted.length===0&&<div style={{textAlign:"center",padding:"3rem",color:"#bbb",fontSize:14}}>No requests match</div>}
           {sorted.map(req=>{
@@ -274,10 +255,7 @@ export default function App() {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:5}}>
                       <span style={{fontWeight:500,fontSize:13,color:"#1a1a1a"}}>{req.requester}</span>
-
-                      {/* ── CLICKABLE IVJN ID → opens Databricks ── */}
-                      <JournalIdChip id={req.id} />
-
+                      <JournalIdChip id={req.id} url={req.d365Url} />
                       <PriBadge p={req.priority}/>
                       <span style={{fontSize:11,color:"#bbb",marginLeft:"auto"}}>{timeAgo(req.timestamp)}</span>
                     </div>
@@ -299,13 +277,6 @@ export default function App() {
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                         View thread
                       </a>
-                      {req.d365Url && (
-                        <a href={req.d365Url} target="_blank" rel="noopener noreferrer"
-                          style={{fontSize:12,color:"#3B6D11",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,padding:"4px 11px",borderRadius:20,border:"0.5px solid #C0DD97",background:"#EAF3DE"}}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                          View in D365
-                        </a>
-                      )}
                     </div>
                   </div>
                 </div>
