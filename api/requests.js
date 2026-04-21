@@ -99,9 +99,9 @@ function parsePriority(text) {
 function deriveStatus(replies, originalMsg) {
   // Check emoji reactions on the original message first
   const reactions = (originalMsg.reactions || []).map(r => r.name.toLowerCase());
-  if (reactions.some(r => ['white_check_mark','heavy_check_mark','done','approved','check','✅','complete'].includes(r))) return 'done';
-  if (reactions.some(r => ['approved','thumbsup','+1'].includes(r))) return 'approved';
-  if (reactions.some(r => ['x','no_entry','cancelled','cancel'].includes(r))) return 'cancelled';
+  if (reactions.some(r => ['white_check_mark','heavy_check_mark','done','approved','check','complete','checkmark','ballot_box_with_check'].includes(r))) return 'done';
+  if (reactions.some(r => ['approved','thumbsup','+1','yes'].includes(r))) return 'approved';
+  if (reactions.some(r => ['x','no_entry','cancelled','cancel','no_entry_sign'].includes(r))) return 'cancelled';
 
   // Then check reply text
   const replyText = replies.slice(1).map(r => extractAllText(r)).join('\n').toLowerCase();
