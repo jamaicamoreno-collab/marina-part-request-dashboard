@@ -12,6 +12,15 @@ const STATUS_MAP = {
   cancelled: { label:"Cancelled",      bg:"#F1EFE8", text:"#5F5E5A", dot:"#888780" },
 };
 
+// ── Update this table path once your IVJN table exists in Databricks ────────
+const DATABRICKS_HOST = "https://joby-aviation-main.cloud.databricks.com";
+const DATABRICKS_TABLE = "hive_metastore.default.inventory_journal"; // ← update this
+
+function buildDatabricksUrl(journalId) {
+  const sql = `SELECT * FROM ${DATABRICKS_TABLE} WHERE journal_id = '${journalId}'`;
+  return `${DATABRICKS_HOST}/sql/editor?q=${encodeURIComponent(sql)}`;
+}
+
 function hoursOld(ts) { return (Date.now() - new Date(ts)) / 36e5; }
 function isOverdue(dn) { return new Date(dn + "T23:59:59") < new Date(); }
 function isAgeAlert(r) { return r.status === "pending" && hoursOld(r.timestamp) > 24; }
@@ -57,6 +66,43 @@ function StatusBadge({ status, onChange }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Clickable IVJN ID chip that links to Databricks ─────────────────────────
+function JournalIdChip({ id }) {
+  return (
+    <a
+      href={buildDatabricksUrl(id)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Open ${id} in Databricks SQL Editor`}
+      style={{
+        display:"inline-flex",
+        alignItems:"center",
+        gap:4,
+        fontSize:11,
+        color:"#185FA5",
+        background:"#E6F1FB",
+        padding:"2px 8px",
+        borderRadius:5,
+        fontFamily:"monospace",
+        textDecoration:"none",
+        border:"0.5px solid #B5D4F4",
+        transition:"background 0.15s",
+        cursor:"pointer",
+      }}
+      onMouseEnter={e=>{e.currentTarget.style.background="#cfe3f8";}}
+      onMouseLeave={e=>{e.currentTarget.style.background="#E6F1FB";}}
+    >
+      {id}
+      {/* Databricks logo icon */}
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{flexShrink:0,opacity:0.7}}>
+        <path d="M12 2L2 7l10 5 10-5-10-5z" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M2 17l10 5 10-5" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M2 12l10 5 10-5" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    </a>
   );
 }
 
@@ -228,7 +274,10 @@ export default function App() {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:5}}>
                       <span style={{fontWeight:500,fontSize:13,color:"#1a1a1a"}}>{req.requester}</span>
-                      <code style={{fontSize:11,color:"#888",background:"#f5f5f4",padding:"2px 7px",borderRadius:5,fontFamily:"monospace"}}>{req.id}</code>
+
+                      {/* ── CLICKABLE IVJN ID → opens Databricks ── */}
+                      <JournalIdChip id={req.id} />
+
                       <PriBadge p={req.priority}/>
                       <span style={{fontSize:11,color:"#bbb",marginLeft:"auto"}}>{timeAgo(req.timestamp)}</span>
                     </div>
