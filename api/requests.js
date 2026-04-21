@@ -147,15 +147,24 @@ export default async function handler(req, res) {
     const limited = kitRequests.slice(0, 12);
     const threads = await Promise.all(limited.map(m => fetchThread(m.ts)));
 
-    // Step 4 — filter to those with @marina-mpms tagged in thread
-    const marinaOnly = limited.reduce((acc, msg, i) => {
+    // Step 4 — DEBUG: check what text we find in threads
+    const debugInfo = limited.map((msg, i) => {
       const threadText = threads[i].map(r => extractAllText(r)).join('\n');
-      // Check for group ID or text mention
-      if (threadText.includes(MARINA_GROUP) || threadText.includes('marina-mpms')) {
-        acc.push({ msg, replies: threads[i] });
-      }
-      return acc;
-    }, []);
+      return {
+        id: extractTicketId(extractAllText(msg)),
+        hasGroupId: threadText.includes(MARINA_GROUP),
+        hasMarinaText: threadText.includes('marina-mpms'),
+        threadLength: threads[i].length,
+        sampleThreadText: threadText.slice(0, 200),
+      };
+    });
+
+    return res.status(200).json({
+      debug: true,
+      totalMessages: messages.length,
+      totalKitRequests: kitRequests.length,
+      debugInfo,
+    });
 
     // Step 5 — collect user IDs to resolve (max 10)
     const userIds = [...new Set(
