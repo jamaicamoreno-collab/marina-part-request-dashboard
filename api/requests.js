@@ -98,7 +98,7 @@ export default async function handler(req, res) {
 
     // Filter to only kit request messages
     const kitRequests = messages.filter(m =>
-      m.text?.includes('New Kit Request') && !m.bot_id === false
+      m.text?.includes('New Kit Request')
     );
 
     // For each message fetch thread and check if @marina-mpms was tagged
