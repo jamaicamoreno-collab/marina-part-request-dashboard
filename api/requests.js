@@ -112,7 +112,9 @@ export default async function handler(req, res) {
     const messages = await fetchChannelMessages();
 
     // Step 3 — debug: return raw count before filtering
-    const kitRequests = messages.filter(m => m.text?.includes('New Kit Request'));
+    const kitRequests = messages.filter(m =>
+      m.text?.includes('IVJN-') || m.text?.includes('Kit Request')
+    );
 
     if (kitRequests.length === 0) {
       return res.status(200).json({
