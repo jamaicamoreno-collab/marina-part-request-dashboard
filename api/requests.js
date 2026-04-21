@@ -1,6 +1,5 @@
 // api/requests.js
-// Vercel serverless function — fetches @marina-mpms tagged requests from Slack
-// Automatically called by the dashboard every 5 minutes
+// Vercel serverless function — fetches @marina-mpms tagged kit requests from Slack
 
 const CHANNEL_ID   = 'C09QE0SBQCQ';  // #part-requests-marina
 const MARINA_GROUP = 'S0A1KD34YAH';   // @marina-mpms user group ID
@@ -16,7 +15,7 @@ async function slackGet(path, params = {}) {
   return res.json();
 }
 
-// ── Fetch last 200 messages from channel ──────────────────────────────────
+// ── Fetch last 200 messages ────────────────────────────────────────────────
 async function fetchChannelMessages() {
   const msgs = [];
   let cursor;
@@ -24,7 +23,6 @@ async function fetchChannelMessages() {
     const data = await slackGet('conversations.history', {
       channel: CHANNEL_ID,
       limit: 100,
-      include_all_metadata: true,
       ...(cursor ? { cursor } : {}),
     });
     if (!data.ok) break;
@@ -45,113 +43,99 @@ async function fetchThread(ts) {
   return data.messages || [];
 }
 
+// ── Extract all text from a Slack message (blocks + text) ─────────────────
+function extractAllText(msg) {
+  const parts = [];
+
+  // Add plain text field
+  if (msg.text) parts.push(msg.text);
+
+  // Walk all blocks and extract text recursively
+  function walkBlocks(blocks) {
+    if (!blocks) return;
+    for (const block of blocks) {
+      if (block.text?.text) parts.push(block.text.text);
+      if (block.fields) {
+        for (const f of block.fields) {
+          if (f.text) parts.push(f.text);
+        }
+      }
+      if (block.elements) walkBlocks(block.elements);
+      if (block.blocks)   walkBlocks(block.blocks);
+    }
+  }
+  walkBlocks(msg.blocks);
+  walkBlocks(msg.attachments?.flatMap(a => a.blocks || []));
+
+  return parts.join('\n');
+}
+
 // ── Parse helpers ──────────────────────────────────────────────────────────
 function extractTicketId(text) {
   return text?.match(/IVJN-\d+/i)?.[0]?.toUpperCase() || null;
 }
 
-function parseRequester(text, blocks) {
-  if (!text && !blocks) return 'Unknown';
-  // Try blocks format first
-  if (blocks) {
-    for (const block of blocks) {
-      if (block.type === 'section' && block.fields) {
-        for (const field of block.fields) {
-          if (field.text?.includes('Requester')) {
-            const next = field.text.replace(/\*Requester:\*\s*/i, '').trim();
-            const nameMatch = next.match(/<@[A-Z0-9]+\|([^>]+)>/) ||
-                              next.match(/<mailto:[^|]+\|([^>]+)>/);
-            if (nameMatch) return nameMatch[1];
-            if (next.length > 0 && next.length < 60) return next;
-          }
-        }
-      }
-    }
-  }
-  // Try plain text format
-  if (text) {
-    const m1 = text.match(/\*Requester:\*\s*\n<@[A-Z0-9]+\|([^>]+)>/);
-    if (m1) return m1[1];
-    const m2 = text.match(/\*Requester:\*\s*\n<mailto:[^|]+\|([^>]+)>/);
-    if (m2) return m2[1];
-    const m3 = text.match(/Requester[:\s]+([^\n<*]{2,40})/i);
-    if (m3) return m3[1].trim();
-  }
-  return 'Unknown';
-}
-
-function parseFieldFromBlocks(blocks, fieldName) {
-  if (!blocks) return null;
-  for (const block of blocks) {
-    if (block.type === 'section' && block.fields) {
-      for (const field of block.fields) {
-        if (field.text?.includes(fieldName)) {
-          const val = field.text
-            .replace(new RegExp(`\\*?${fieldName}:\\*?\\s*`, 'i'), '')
-            .replace(/<[^>]+>/g, '')
-            .trim();
-          if (val.length > 0 && val.length < 80) return val;
-        }
-      }
-    }
-    // Also check rich_text blocks
-    if (block.type === 'rich_text') {
-      const text = block.elements
-        ?.flatMap(e => e.elements || [])
-        ?.map(e => e.text || '')
-        ?.join('') || '';
-      if (text.includes(fieldName)) {
-        const match = text.match(new RegExp(`${fieldName}[:\\s]+([^\\n]{2,60})`, 'i'));
-        if (match) return match[1].trim();
-      }
-    }
-  }
-  return null;
-}
-
-function parseField(text, fieldName) {
+// Extract value after a label like "*Requester:*\n" or "Requester: "
+function parseLabel(text, label) {
   if (!text) return null;
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const patterns = [
-    new RegExp(`\\*${fieldName}:\\*\\s*\\n([^\\n*<]+)`),
-    new RegExp(`${fieldName}:\\s*\\n([^\\n*<]+)`),
-    new RegExp(`\\*${fieldName}\\*:\\s*([^\\n*<]+)`),
-    new RegExp(`${fieldName}[:\\s]+([^\\n<*]{2,60})`, 'i'),
+    // *Label:*\nValue  (newline after colon)
+    new RegExp(`\\*?${escaped}:?\\*?\\s*\\n([^\\n*]{1,80})`),
+    // *Label:* Value  (space after colon)
+    new RegExp(`\\*?${escaped}:?\\*?\\s+([^\\n*<]{1,80})`),
   ];
   for (const re of patterns) {
     const m = text.match(re);
-    if (m?.[1]?.trim()) return m[1].trim();
+    if (m?.[1]) {
+      // Strip Slack mention syntax like <@U123|name> → name
+      const clean = m[1]
+        .replace(/<@[A-Z0-9]+\|([^>]+)>/g, '$1')
+        .replace(/<mailto:[^|]+\|([^>]+)>/g, '$1')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .trim();
+      if (clean.length > 0 && clean.length < 80) return clean;
+    }
   }
   return null;
 }
 
 function parsePriority(text) {
-  if (/line down/i.test(text) || /alert/i.test(text)) return 'linedown';
-  if (/asap/i.test(text)) return 'asap';
+  if (!text) return 'asready';
+  if (/line.?down|alert/i.test(text)) return 'linedown';
+  if (/asap/i.test(text))             return 'asap';
   return 'asready';
 }
 
 function deriveStatus(replies) {
-  const text = replies.map(r => r.text || '').join('\n');
-  if (/staged|complete|courier|pick.?up rack|outbound rack/i.test(text)) return 'done';
+  const text = replies.map(r => extractAllText(r)).join('\n').toLowerCase();
+  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier/i.test(text)) return 'done';
   if (/:approved:|approved|✅/i.test(text)) return 'approved';
-  if (/cancel/i.test(text)) return 'cancelled';
+  if (/cancel/i.test(text))                 return 'cancelled';
   return 'pending';
 }
 
 function extractThreadNote(replies) {
-  const meaningful = replies.slice(1).find(r =>
-    r.user && r.text?.length > 20
-  );
-  return meaningful?.text
-    ?.replace(/<[^>]+>/g, '')
-    ?.replace(/\s+/g, ' ')
-    ?.trim()
-    ?.slice(0, 120) || null;
+  // Find the first meaningful human reply (not the bot approval request)
+  const human = replies.slice(1).find(r => {
+    const t = extractAllText(r);
+    return r.user &&
+      t.length > 15 &&
+      !t.includes('Please review this kit request') &&
+      !t.includes('marina-mpms');
+  });
+  if (!human) return null;
+  return extractAllText(human)
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
 }
 
 function buildPermalink(ts) {
-  const tsSafe = ts.replace('.', '');
-  return `https://jobyaviation.slack.com/archives/${CHANNEL_ID}/p${tsSafe}`;
+  return `https://jobyaviation.slack.com/archives/${CHANNEL_ID}/p${ts.replace('.', '')}`;
 }
 
 // ── Main handler ───────────────────────────────────────────────────────────
@@ -160,63 +144,56 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET');
 
   if (!SLACK_TOKEN) {
-    return res.status(500).json({ error: 'SLACK_BOT_TOKEN not set in environment variables' });
+    return res.status(500).json({ error: 'SLACK_BOT_TOKEN not set' });
   }
 
   try {
-    // Step 1 — test if token works by fetching channel info
+    // Verify channel access
     const channelInfo = await slackGet('conversations.info', { channel: CHANNEL_ID });
     if (!channelInfo.ok) {
       return res.status(200).json({
-        error: 'Cannot access channel',
-        slack_error: channelInfo.error,
+        error: channelInfo.error,
         fix: channelInfo.error === 'not_in_channel'
-          ? 'Bot needs to be invited to #part-requests-marina. Type /invite @Marina Dashboard in that channel.'
-          : channelInfo.error === 'invalid_auth'
-          ? 'SLACK_BOT_TOKEN is invalid. Check your token in Vercel environment variables.'
-          : channelInfo.error,
+          ? 'Type /invite @MPM Dashboard in #part-requests-marina'
+          : 'Check your SLACK_BOT_TOKEN in Vercel environment variables',
       });
     }
 
-    // Step 2 — fetch messages
     const messages = await fetchChannelMessages();
 
-    // Step 3 — debug: return raw count before filtering
-    const kitRequests = messages.filter(m =>
-      m.text?.includes('IVJN-') || m.text?.includes('Kit Request')
-    );
+    // Filter to kit requests containing an IVJN ticket ID
+    const kitRequests = messages.filter(m => {
+      const t = extractAllText(m);
+      return t.includes('IVJN-') && (
+        t.includes('Kit Request') ||
+        t.includes('Requester') ||
+        t.includes('Destination')
+      );
+    });
 
-    if (kitRequests.length === 0) {
-      return res.status(200).json({
-        debug: true,
-        message: 'Connected to Slack but no kit requests found in last 200 messages',
-        total_messages_fetched: messages.length,
-        channel: channelInfo.channel?.name,
-        requests: [],
-        fetchedAt: new Date().toISOString(),
-        total: 0,
-      });
-    }
-
-    // Step 4 — fetch threads and filter by @marina-mpms
+    // For each fetch thread and check for @marina-mpms tag
     const results = await Promise.all(
       kitRequests.map(async (msg) => {
-        const replies = await fetchThread(msg.ts);
-        const allText = replies.map(r => r.text || '').join('\n');
-        if (!allText.includes(MARINA_GROUP)) return null;
+        const replies  = await fetchThread(msg.ts);
+        const allText  = replies.map(r => extractAllText(r)).join('\n');
+
+        // Only include if @marina-mpms was tagged somewhere in thread
+        if (!allText.includes(MARINA_GROUP) && !allText.includes('marina-mpms')) return null;
+
+        const fullText = extractAllText(msg);
 
         return {
-          id:             extractTicketId(msg.text) || msg.ts,
-          requester:      parseRequester(msg.text, msg.blocks),
+          id:             extractTicketId(fullText) || msg.ts,
+          requester:      parseLabel(fullText, 'Requester')            || 'Unknown',
           timestamp:      new Date(parseFloat(msg.ts) * 1000).toISOString(),
-          priority:       parsePriority(msg.text),
-          warehouse:      parseFieldFromBlocks(msg.blocks, 'Destination Warehouse') || parseField(msg.text, 'Destination Warehouse') || '—',
-          location:       parseFieldFromBlocks(msg.blocks, 'Destination Location')  || parseField(msg.text, 'Destination Location')  || '—',
-          dateNeeded:     parseFieldFromBlocks(msg.blocks, 'Date Needed')            || parseField(msg.text, 'Date Needed')            || '—',
+          priority:       parsePriority(fullText),
+          warehouse:      parseLabel(fullText, 'Destination Warehouse') || '—',
+          location:       parseLabel(fullText, 'Destination Location')  || '—',
+          dateNeeded:     parseLabel(fullText, 'Date Needed')            || '—',
           status:         deriveStatus(replies),
           threadActivity: extractThreadNote(replies),
           threadUrl:      buildPermalink(msg.ts),
-          replyCount:     replies.length - 1,
+          replyCount:     Math.max(0, replies.length - 1),
         };
       })
     );
