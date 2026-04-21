@@ -1,6 +1,5 @@
 // api/requests.js
 // Vercel serverless function — fetches RNDCONSUME kit requests from Slack
-// These are the requests that @marina-mpms reviews
 
 const CHANNEL_ID  = 'C09QE0SBQCQ'; // #part-requests-marina
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
@@ -40,7 +39,6 @@ async function fetchThread(ts) {
   return data.messages || [];
 }
 
-// Extract all text from a Slack message including blocks
 function extractAllText(msg) {
   const parts = [];
   if (msg.text) parts.push(msg.text);
@@ -99,7 +97,7 @@ function parsePriority(text) {
 
 function deriveStatus(replies) {
   const text = replies.map(r => extractAllText(r)).join('\n').toLowerCase();
-  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier|transfer rack|transfer pick|ready for pickup|fulfilled|sent out|delivered|kitted|now complete/i.test(text)) return 'done';
+  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier|transfer rack|transfer pick|now complete|ready for pickup|fulfilled|sent out|delivered|kitted/i.test(text)) return 'done';
   if (/:approved:|approved|\u2705|looks good|good to go|confirmed|permission granted/i.test(text)) return 'approved';
   if (/cancel/i.test(text)) return 'cancelled';
   return 'pending';
@@ -139,13 +137,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch messages
     const messages = await fetchChannelMessages();
 
-    // Filter to RNDCONSUME kit requests from last 7 days only
+    // Filter to RNDCONSUME kit requests from last 7 days
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const rndRequests = messages.filter(m => {
-      const t = extractAllText(m);
+      const t  = extractAllText(m);
       const ts = parseFloat(m.ts) * 1000;
       return t.includes('IVJN-') &&
              t.includes('RNDCONSUME') &&
