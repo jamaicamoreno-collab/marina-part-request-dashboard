@@ -1,91 +1,4 @@
-import { useState, useEffect } from "react";
-
-const SEED = [
-  {
-    id:"IVJN-060526", requester:"Mitch", timestamp:"2026-04-16T11:27:30",
-    priority:"asready", warehouse:"MAKENG", location:"RNDCONSUME", dateNeeded:"2026-04-16",
-    status:"approved", replyCount:4,
-    threadActivity:"jamaica.moreno → gloriana.cruz ✅ approved",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776363983606499"
-  },
-  {
-    id:"IVJN-060059", requester:"curt.matsushima", timestamp:"2026-04-15T14:24:00",
-    priority:"asap", warehouse:"MAKENG", location:"RNDCONSUME", dateNeeded:"2026-04-15",
-    status:"done", replyCount:6,
-    threadActivity:"jamaica.moreno: not 2.1B BOM — ensay.kim: on courier outbound rack, arrives MAK EOD",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776287941546189"
-  },
-  {
-    id:"IVJN-059831", requester:"curt.matsushima", timestamp:"2026-04-15T10:04:50",
-    priority:"asready", warehouse:"MAKENG", location:"RNDCONSUME", dateNeeded:"2026-04-15",
-    status:"done", replyCount:3,
-    threadActivity:"jamaica.moreno ✅ approved · fatima.reyes: kit staged on Pickup/Transfer Rack",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776272581306139"
-  },
-  {
-    id:"IVJN-059630", requester:"vladimir.vinokurov", timestamp:"2026-04-14T17:53:15",
-    priority:"asap", warehouse:"SRUENG", location:"RNDCONSUME", dateNeeded:"2026-04-15",
-    status:"done", replyCount:3,
-    threadActivity:"jamaica.moreno ✅ approved · jaziel.aceves: staged at courier pick up rack",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776214341370219"
-  },
-  {
-    id:"IVJN-059486", requester:"curt.matsushima", timestamp:"2026-04-14T14:38:43",
-    priority:"asap", warehouse:"MAKENG", location:"RNDCONSUME", dateNeeded:"2026-04-14",
-    status:"done", replyCount:3,
-    threadActivity:"jamaica.moreno ✅ approved · oscar.ceja: complete & staged on inventory pick up rack",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776202685685539"
-  },
-  {
-    id:"IVJN-059479", requester:"Erin Casper", timestamp:"2026-04-14T14:25:42",
-    priority:"asready", warehouse:"WVI01", location:"RNDCONSUME", dateNeeded:"2026-04-21",
-    status:"approved", replyCount:2,
-    threadActivity:"jamaica.moreno: Not on 2.1B BOM — approved · needed for Iris",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776201915195409"
-  },
-  {
-    id:"IVJN-059466", requester:"Erin Casper", timestamp:"2026-04-14T14:20:49",
-    priority:"asready", warehouse:"WVI01", location:"RNDCONSUME", dateNeeded:"2026-04-21",
-    status:"approved", replyCount:2,
-    threadActivity:"jamaica.moreno: Not on 2.1B BOM — approved · needed for Iris",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776201504931329"
-  },
-  {
-    id:"IVJN-059405", requester:"Kimee M", timestamp:"2026-04-14T13:12:26",
-    priority:"asready", warehouse:"SQLENG", location:"RNDCONSUME", dateNeeded:"2026-04-15",
-    status:"done", replyCount:9,
-    threadActivity:"taylor.harris ✅ approved · jaziel.aceves: staged at courier pick up rack",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776197532433259"
-  },
-  {
-    id:"IVJN-059280", requester:"Matthew Bates", timestamp:"2026-04-14T10:25:54",
-    priority:"asready", warehouse:"MAKENG", location:"RNDCONSUME", dateNeeded:"2026-04-14",
-    status:"cancelled", replyCount:3,
-    threadActivity:"matthew.bates: no longer needed · Marcus Guevara: cancelling now",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776187441980099"
-  },
-  {
-    id:"IVJN-059125", requester:"curt.matsushima", timestamp:"2026-04-14T07:55:49",
-    priority:"asap", warehouse:"MAKENG", location:"RNDCONSUME", dateNeeded:"2026-04-14",
-    status:"approved", replyCount:3,
-    threadActivity:"jamaica.moreno ✅ approved",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776178549050839"
-  },
-  {
-    id:"IVJN-059053", requester:"Erin Casper", timestamp:"2026-04-13T16:43:49",
-    priority:"asap", warehouse:"WVI01", location:"RNDCONSUME", dateNeeded:"2026-04-15",
-    status:"approved", replyCount:4,
-    threadActivity:"jason.giusti: Confirmed release 1 (ONE) roll · to SC shop",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776123829608189"
-  },
-  {
-    id:"IVJN-058928", requester:"Logan", timestamp:"2026-04-13T13:46:33",
-    priority:"asready", warehouse:"MAKENG", location:"RNDCONSUME", dateNeeded:"2026-04-15",
-    status:"pending", replyCount:2,
-    threadActivity:"jaziel.aceves: any update for this request? — no response yet",
-    threadUrl:"https://jobyaviation.slack.com/archives/C09QE0SBQCQ/p1776113193284779"
-  },
-];
+import { useState, useEffect, useCallback } from "react";
 
 const PRIORITY = {
   linedown:{ label:"Line Down", bg:"#FCEBEB", text:"#A32D2D", dot:"#E24B4A" },
@@ -148,20 +61,45 @@ function StatusBadge({ status, onChange }) {
 }
 
 export default function App() {
-  const [rows,setRows]           = useState(SEED);
+  const [rows,setRows]           = useState([]);
+  const [loading,setLoading]     = useState(true);
+  const [error,setError]         = useState(null);
+  const [lastSync,setLastSync]   = useState(null);
+  const [countdown,setCountdown] = useState(300);
   const [filter,setFilter]       = useState("pending");
   const [search,setSearch]       = useState("");
   const [syncing,setSyncing]     = useState(false);
-  const [lastSync,setLastSync]   = useState(new Date());
-  const [countdown,setCountdown] = useState(300);
 
-  useEffect(()=>{
-    const t = setInterval(()=>setCountdown(c=>c<=1?300:c-1),1000);
-    return ()=>clearInterval(t);
-  },[]);
+  const fetchData = useCallback(async () => {
+    try {
+      setSyncing(true);
+      const res  = await fetch('/api/requests?' + Date.now());
+      const json = await res.json();
+      if (json.requests) {
+        setRows(json.requests);
+        setLastSync(new Date());
+        setCountdown(300);
+        setError(null);
+      }
+    } catch (e) {
+      setError('Failed to fetch data from Slack');
+    } finally {
+      setLoading(false);
+      setSyncing(false);
+    }
+  }, []);
 
-  function updateStatus(id, s) { setRows(rs => rs.map(r => r.id === id ? {...r, status: s} : r)); }
-  function handleRefresh() { fetchData(); }
+  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const t = setInterval(fetchData, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [fetchData]);
+  useEffect(() => {
+    const t = setInterval(() => setCountdown(c => c <= 1 ? 300 : c - 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  function updateStatus(id,s){ setRows(rs=>rs.map(r=>r.id===id?{...r,status:s}:r)); }
 
   const counts = {
     all:       rows.length,
@@ -200,6 +138,8 @@ export default function App() {
 
   return (
     <div style={{minHeight:"100vh",background:"#f5f5f4",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
+
+      {/* Nav */}
       <div style={{background:"#fff",borderBottom:"0.5px solid #e5e5e3",padding:"0 20px",display:"flex",alignItems:"center",justifyContent:"space-between",height:52}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:28,height:28,borderRadius:8,background:"#E6F1FB",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -217,41 +157,61 @@ export default function App() {
       </div>
 
       <div style={{maxWidth:860,margin:"0 auto",padding:"20px 16px"}}>
+
+        {/* Alert banners */}
         {counts.aged>0&&<div style={{background:"#FAEEDA",border:"0.5px solid #EF9F27",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:"#854F0B",fontWeight:500}}>⏰ {counts.aged} request{counts.aged>1?"s":""} pending over 24h — needs attention</span></div>}
         {counts.overdue>0&&<div style={{background:"#FCEBEB",border:"0.5px solid #E24B4A",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:"#A32D2D",fontWeight:500}}>⚠ {counts.overdue} request{counts.overdue>1?"s":""} past Date Needed — action required</span></div>}
 
+        {/* Header */}
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
           <div>
             <h1 style={{fontSize:16,fontWeight:500,color:"#1a1a1a",margin:"0 0 2px"}}>Kit requests · @marina-mpms tagged</h1>
-            <p style={{fontSize:11,color:"#aaa",margin:0}}>Last synced: {lastSync.toLocaleTimeString()} · {rows.length} requests · #part-requests-marina</p>
+            <p style={{fontSize:11,color:"#aaa",margin:0}}>
+              {lastSync ? `Last synced: ${lastSync.toLocaleTimeString()}` : "Loading..."} · {rows.length} requests · #part-requests-marina
+            </p>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ID, name or location…" style={{padding:"6px 12px",borderRadius:8,border:"0.5px solid #ddd",fontSize:12,width:210,background:"#fff",color:"#1a1a1a",outline:"none"}}/>
-            <button onClick={handleRefresh} style={{padding:"6px 14px",borderRadius:8,border:"0.5px solid #ddd",background:"#fff",fontSize:12,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",gap:5}}>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ID, name or location…"
+              style={{padding:"6px 12px",borderRadius:8,border:"0.5px solid #ddd",fontSize:12,width:210,background:"#fff",color:"#1a1a1a",outline:"none"}}/>
+            <button onClick={()=>fetchData()}
+              style={{padding:"6px 14px",borderRadius:8,border:"0.5px solid #ddd",background:"#fff",fontSize:12,cursor:"pointer",color:"#555",display:"flex",alignItems:"center",gap:5}}>
               {syncing?"…":"⟳"} {syncing?"Syncing…":"Refresh"}
             </button>
           </div>
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:14}}>
+        {/* Error */}
+        {error&&<div style={{background:"#FCEBEB",border:"0.5px solid #E24B4A",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#A32D2D"}}>⚠ {error}</div>}
+
+        {/* Loading */}
+        {loading&&<div style={{textAlign:"center",padding:"3rem",color:"#aaa",fontSize:14}}>Loading from Slack...</div>}
+
+        {/* Metrics */}
+        {!loading&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:14}}>
           {metrics.map(m=>(
             <div key={m.label} style={{background:"#fff",borderRadius:8,padding:"10px 14px",border:"0.5px solid #e5e5e3"}}>
               <p style={{fontSize:11,color:"#999",margin:"0 0 4px"}}>{m.label}</p>
               <p style={{fontSize:26,fontWeight:500,margin:0,color:m.color}}>{m.value}</p>
             </div>
           ))}
-        </div>
+        </div>}
 
-        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+        {/* Filters */}
+        {!loading&&<div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
           {["pending","approved","done","cancelled","all"].map(f=>(
-            <button key={f} onClick={()=>setFilter(f)} style={{fontSize:12,padding:"5px 13px",borderRadius:20,cursor:"pointer",border:`0.5px solid ${filter===f?"#888":"#ddd"}`,background:filter===f?"#fff":"transparent",fontWeight:filter===f?500:400,color:"#1a1a1a",display:"flex",alignItems:"center",gap:5}}>
+            <button key={f} onClick={()=>setFilter(f)}
+              style={{fontSize:12,padding:"5px 13px",borderRadius:20,cursor:"pointer",
+                border:`0.5px solid ${filter===f?"#888":"#ddd"}`,
+                background:filter===f?"#fff":"transparent",
+                fontWeight:filter===f?500:400,color:"#1a1a1a",display:"flex",alignItems:"center",gap:5}}>
               {f==="all"?"All":STATUS_MAP[f]?.label}
               <span style={{fontSize:11,color:"#bbb",fontWeight:400}}>{counts[f]}</span>
             </button>
           ))}
-        </div>
+        </div>}
 
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {/* Cards */}
+        {!loading&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
           {sorted.length===0&&<div style={{textAlign:"center",padding:"3rem",color:"#bbb",fontSize:14}}>No requests match</div>}
           {sorted.map(req=>{
             const aged=isAgeAlert(req);
@@ -285,7 +245,8 @@ export default function App() {
                     {req.threadActivity&&<div style={{background:"#f8f8f7",borderRadius:7,padding:"5px 10px",marginBottom:9,fontSize:12,color:"#666",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>💬 {req.threadActivity}</div>}
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                       <StatusBadge status={req.status} onChange={s=>updateStatus(req.id,s)}/>
-                      <a href={req.threadUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#185FA5",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,padding:"4px 11px",borderRadius:20,border:"0.5px solid #B5D4F4",background:"#E6F1FB"}}>
+                      <a href={req.threadUrl} target="_blank" rel="noopener noreferrer"
+                        style={{fontSize:12,color:"#185FA5",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,padding:"4px 11px",borderRadius:20,border:"0.5px solid #B5D4F4",background:"#E6F1FB"}}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                         View thread
                       </a>
@@ -295,8 +256,11 @@ export default function App() {
               </div>
             );
           })}
-        </div>
-        <p style={{textAlign:"center",fontSize:11,color:"#ccc",marginTop:24}}>Marina Part Request Dashboard · v9 · {new Date().toLocaleDateString()}</p>
+        </div>}
+
+        <p style={{textAlign:"center",fontSize:11,color:"#ccc",marginTop:24}}>
+          Marina Part Request Dashboard · {new Date().toLocaleDateString()}
+        </p>
       </div>
     </div>
   );
