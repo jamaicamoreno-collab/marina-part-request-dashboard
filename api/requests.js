@@ -157,8 +157,26 @@ export default async function handler(req, res) {
              ts > sevenDaysAgo;
     });
 
-    // Limit to 20 to avoid Vercel timeout
-    const limited = rndRequests.slice(0, 20);
+    // Separate pending/approved from done/cancelled
+    // Always show ALL pending/approved first, then fill up to 30 with done/cancelled
+    const activeMsgs    = rndRequests.filter(m => {
+      const reactions = (m.reactions || []).map(r => r.name.toLowerCase());
+      const hasDoneReaction = reactions.some(r =>
+        ['white_check_mark','heavy_check_mark','done','complete','checkmark','ballot_box_with_check'].includes(r)
+      );
+      const hasCancelReaction = reactions.some(r =>
+        ['x','no_entry','cancelled','cancel','no_entry_sign'].includes(r)
+      );
+      return !hasDoneReaction && !hasCancelReaction;
+    });
+    const completedMsgs = rndRequests.filter(m => !activeMsgs.includes(m));
+
+    // Take ALL active + fill remaining slots up to 30 with completed
+    const maxTotal  = 30;
+    const limited   = [
+      ...activeMsgs,
+      ...completedMsgs.slice(0, Math.max(0, maxTotal - activeMsgs.length))
+    ];
 
     // Fetch threads in parallel
     const threads = await Promise.all(limited.map(m => fetchThread(m.ts)));
@@ -168,7 +186,7 @@ export default async function handler(req, res) {
       limited
         .map(m => extractRequesterId(extractAllText(m)))
         .filter(Boolean)
-    )].slice(0, 20);
+    )].slice(0, 30);
 
     // Resolve user names in parallel
     const userMap = {};
