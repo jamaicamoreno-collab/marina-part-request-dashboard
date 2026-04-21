@@ -1,9 +1,9 @@
 // api/requests.js
-// Vercel serverless function — fetches @marina-mpms tagged kit requests from Slack
+// Vercel serverless function — fetches RNDCONSUME kit requests from Slack
+// These are the requests that @marina-mpms reviews
 
-const CHANNEL_ID   = 'C09QE0SBQCQ';  // #part-requests-marina
-const MARINA_GROUP = 'S0A1KD34YAH';   // @marina-mpms user group ID
-const SLACK_TOKEN  = process.env.SLACK_BOT_TOKEN;
+const CHANNEL_ID  = 'C09QE0SBQCQ'; // #part-requests-marina
+const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
 
 async function slackGet(path, params = {}) {
   const url = new URL(`https://slack.com/api/${path}`);
@@ -40,7 +40,7 @@ async function fetchThread(ts) {
   return data.messages || [];
 }
 
-// Extract all text recursively from message including blocks
+// Extract all text from a Slack message including blocks
 function extractAllText(msg) {
   const parts = [];
   if (msg.text) parts.push(msg.text);
@@ -48,7 +48,7 @@ function extractAllText(msg) {
     if (!blocks) return;
     for (const b of blocks) {
       if (b.text?.text) parts.push(b.text.text);
-      if (b.text && typeof b.text === 'string') parts.push(b.text);
+      if (typeof b.text === 'string') parts.push(b.text);
       if (b.fields) b.fields.forEach(f => f.text && parts.push(f.text));
       if (b.elements) walk(b.elements);
       if (b.blocks)   walk(b.blocks);
@@ -70,15 +70,15 @@ function extractTicketId(text) {
 }
 
 function extractRequesterId(text) {
-  const m = text?.match(/Requester[^<\n]*[\n\r]*<@([A-Z0-9]+)/i);
+  const m = text?.match(/Requester[^<\n]*[\n\r]*.*?<@([A-Z0-9]+)/is);
   return m?.[1] || null;
 }
 
 function parseLabel(text, label) {
   if (!text) return null;
   const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`${esc}[^\\n]*[\\n\\r]+([^\\n*<]{1,60})`, 'i');
-  const m  = text.match(re);
+  const re  = new RegExp(`${esc}[^\\n]*[\\n\\r]+([^\\n*<]{1,60})`, 'i');
+  const m   = text.match(re);
   if (m?.[1]) {
     return m[1]
       .replace(/<[^>]+>/g, '')
@@ -108,9 +108,11 @@ function deriveStatus(replies) {
 function extractThreadNote(replies) {
   const human = replies.slice(1).find(r => {
     const t = extractAllText(r);
-    return r.user && t.length > 15 &&
+    return r.user &&
+      t.length > 15 &&
       !t.includes('Please review this kit request') &&
-      !t.includes('marina-mpms');
+      !t.includes('marina-mpms') &&
+      !t.includes('New Kit Request');
   });
   if (!human) return null;
   return extractAllText(human)
@@ -134,36 +136,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Step 1 — fetch messages
+    // Fetch messages
     const messages = await fetchChannelMessages();
 
-    // Step 2 — filter to kit requests with IVJN ticket IDs
-    const kitRequests = messages.filter(m => {
+    // Filter to RNDCONSUME kit requests only
+    const rndRequests = messages.filter(m => {
       const t = extractAllText(m);
-      return t.includes('IVJN-');
+      return t.includes('IVJN-') && t.includes('RNDCONSUME');
     });
 
-    // Step 3 — fetch threads for first 15 kit requests
-    const limited = kitRequests.slice(0, 15);
+    // Limit to 12 to avoid Vercel timeout
+    const limited = rndRequests.slice(0, 12);
+
+    // Fetch threads in parallel
     const threads = await Promise.all(limited.map(m => fetchThread(m.ts)));
 
-    // Step 4 — filter to RNDCONSUME destination only (these are the marina-mpms requests)
-    const marinaOnly = limited.reduce((acc, msg, i) => {
-      const fullText = extractAllText(msg);
-      if (fullText.includes('RNDCONSUME')) {
-        acc.push({ msg, replies: threads[i] });
-      }
-      return acc;
-    }, []);
-
-    // Step 5 — collect user IDs to resolve (max 10)
+    // Collect unique user IDs
     const userIds = [...new Set(
-      marinaOnly
-        .map(({ msg }) => extractRequesterId(extractAllText(msg)))
+      limited
+        .map(m => extractRequesterId(extractAllText(m)))
         .filter(Boolean)
-    )].slice(0, 10);
+    )].slice(0, 12);
 
-    // Step 6 — resolve user names in parallel
+    // Resolve user names in parallel
     const userMap = {};
     await Promise.all(userIds.map(async id => {
       try {
@@ -176,8 +171,8 @@ export default async function handler(req, res) {
       } catch { userMap[id] = id; }
     }));
 
-    // Step 7 — build results
-    const results = marinaOnly.map(({ msg, replies }) => {
+    // Build results
+    const results = limited.map((msg, i) => {
       const full      = extractAllText(msg);
       const userId    = extractRequesterId(full);
       const requester = userId ? (userMap[userId] || userId) : 'Unknown';
@@ -187,12 +182,12 @@ export default async function handler(req, res) {
         timestamp:      new Date(parseFloat(msg.ts) * 1000).toISOString(),
         priority:       parsePriority(full),
         warehouse:      parseLabel(full, 'Destination Warehouse') || '—',
-        location:       parseLabel(full, 'Destination Location')  || '—',
-        dateNeeded:     parseLabel(full, 'Date Needed')            || '—',
-        status:         deriveStatus(replies),
-        threadActivity: extractThreadNote(replies),
+        location:       'RNDCONSUME',
+        dateNeeded:     parseLabel(full, 'Date Needed') || '—',
+        status:         deriveStatus(threads[i]),
+        threadActivity: extractThreadNote(threads[i]),
         threadUrl:      buildPermalink(msg.ts),
-        replyCount:     Math.max(0, replies.length - 1),
+        replyCount:     Math.max(0, threads[i].length - 1),
       };
     });
 
