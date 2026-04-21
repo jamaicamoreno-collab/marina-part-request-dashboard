@@ -99,7 +99,7 @@ function parsePriority(text) {
 
 function deriveStatus(replies) {
   const text = replies.map(r => extractAllText(r)).join('\n').toLowerCase();
-  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier|transfer rack|ready for pickup|fulfilled|sent out|delivered|kitted/i.test(text)) return 'done';
+  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier|transfer rack|transfer pick|ready for pickup|fulfilled|sent out|delivered|kitted|now complete/i.test(text)) return 'done';
   if (/:approved:|approved|\u2705|looks good|good to go|confirmed|permission granted/i.test(text)) return 'approved';
   if (/cancel/i.test(text)) return 'cancelled';
   return 'pending';
@@ -142,10 +142,14 @@ export default async function handler(req, res) {
     // Fetch messages
     const messages = await fetchChannelMessages();
 
-    // Filter to RNDCONSUME kit requests only
+    // Filter to RNDCONSUME kit requests from last 7 days only
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const rndRequests = messages.filter(m => {
       const t = extractAllText(m);
-      return t.includes('IVJN-') && t.includes('RNDCONSUME');
+      const ts = parseFloat(m.ts) * 1000;
+      return t.includes('IVJN-') &&
+             t.includes('RNDCONSUME') &&
+             ts > sevenDaysAgo;
     });
 
     // Limit to 12 to avoid Vercel timeout
