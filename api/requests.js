@@ -5,7 +5,6 @@ const CHANNEL_ID   = 'C09QE0SBQCQ';  // #part-requests-marina
 const MARINA_GROUP = 'S0A1KD34YAH';   // @marina-mpms user group ID
 const SLACK_TOKEN  = process.env.SLACK_BOT_TOKEN;
 
-// ── Slack API helper ───────────────────────────────────────────────────────
 async function slackGet(path, params = {}) {
   const url = new URL(`https://slack.com/api/${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -15,7 +14,6 @@ async function slackGet(path, params = {}) {
   return res.json();
 }
 
-// ── Fetch last 200 messages ────────────────────────────────────────────────
 async function fetchChannelMessages() {
   const msgs = [];
   let cursor;
@@ -33,7 +31,6 @@ async function fetchChannelMessages() {
   return msgs;
 }
 
-// ── Fetch thread replies ───────────────────────────────────────────────────
 async function fetchThread(ts) {
   const data = await slackGet('conversations.replies', {
     channel: CHANNEL_ID,
@@ -43,103 +40,75 @@ async function fetchThread(ts) {
   return data.messages || [];
 }
 
-// ── Fetch user display names in one batch ─────────────────────────────────
-async function buildUserMap(userIds) {
-  const map = {};
-  // Fetch up to 20 users in parallel to stay within timeout
-  const unique = [...new Set(userIds)].slice(0, 20);
-  await Promise.all(unique.map(async (id) => {
-    try {
-      const data = await slackGet('users.info', { user: id });
-      if (data.ok && data.user) {
-        map[id] =
-          data.user.profile?.display_name_normalized ||
-          data.user.profile?.display_name ||
-          data.user.profile?.real_name ||
-          data.user.real_name ||
-          data.user.name ||
-          id;
-      } else {
-        map[id] = id;
-      }
-    } catch {
-      map[id] = id;
-    }
-  }));
-  return map;
-}
-
-// ── Extract all text from a Slack message (blocks + text) ─────────────────
+// Extract all text recursively from message including blocks
 function extractAllText(msg) {
   const parts = [];
   if (msg.text) parts.push(msg.text);
-  function walkBlocks(blocks) {
+  function walk(blocks) {
     if (!blocks) return;
-    for (const block of blocks) {
-      if (block.text?.text) parts.push(block.text.text);
-      if (block.fields) block.fields.forEach(f => f.text && parts.push(f.text));
-      if (block.elements) walkBlocks(block.elements);
-      if (block.blocks)   walkBlocks(block.blocks);
+    for (const b of blocks) {
+      if (b.text?.text) parts.push(b.text.text);
+      if (b.text && typeof b.text === 'string') parts.push(b.text);
+      if (b.fields) b.fields.forEach(f => f.text && parts.push(f.text));
+      if (b.elements) walk(b.elements);
+      if (b.blocks)   walk(b.blocks);
     }
   }
-  walkBlocks(msg.blocks);
-  if (msg.attachments) walkBlocks(msg.attachments.flatMap(a => a.blocks || []));
+  walk(msg.blocks);
+  if (msg.attachments) {
+    msg.attachments.forEach(a => {
+      if (a.text) parts.push(a.text);
+      if (a.fallback) parts.push(a.fallback);
+      walk(a.blocks || []);
+    });
+  }
   return parts.join('\n');
 }
 
-// ── Parse helpers ──────────────────────────────────────────────────────────
 function extractTicketId(text) {
   return text?.match(/IVJN-\d+/i)?.[0]?.toUpperCase() || null;
 }
 
 function extractRequesterId(text) {
-  if (!text) return null;
-  const m = text.match(/\*Requester:\*\s*[\n\r]+<@([A-Z0-9]+)(?:\|[^>]*)?>/);
+  const m = text?.match(/Requester[^<\n]*[\n\r]*<@([A-Z0-9]+)/i);
   return m?.[1] || null;
 }
 
 function parseLabel(text, label) {
   if (!text) return null;
   const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const patterns = [
-    new RegExp(`\\*?${esc}:?\\*?\\s*\\n([^\\n*]{1,80})`),
-    new RegExp(`\\*?${esc}:?\\*?\\s+([^\\n*<]{1,80})`),
-  ];
-  for (const re of patterns) {
-    const m = text.match(re);
-    if (m?.[1]) {
-      const clean = m[1]
-        .replace(/<@[A-Z0-9]+\|([^>]+)>/g, '$1')
-        .replace(/<mailto:[^|]+\|([^>]+)>/g, '$1')
-        .replace(/<[^>]+>/g, '')
-        .replace(/&amp;/g, '&')
-        .trim();
-      if (clean.length > 0 && clean.length < 80) return clean;
-    }
+  const re = new RegExp(`${esc}[^\\n]*[\\n\\r]+([^\\n*<]{1,60})`, 'i');
+  const m  = text.match(re);
+  if (m?.[1]) {
+    return m[1]
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/\*/g, '')
+      .trim()
+      .slice(0, 60) || null;
   }
   return null;
 }
 
 function parsePriority(text) {
   if (!text) return 'asready';
-  if (/line.?down|alert/i.test(text)) return 'linedown';
-  if (/asap/i.test(text))             return 'asap';
+  if (/line.?down|:alert:/i.test(text)) return 'linedown';
+  if (/asap/i.test(text))               return 'asap';
   return 'asready';
 }
 
 function deriveStatus(replies) {
   const text = replies.map(r => extractAllText(r)).join('\n').toLowerCase();
   if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier/i.test(text)) return 'done';
-  if (/:approved:|approved|✅/i.test(text)) return 'approved';
-  if (/cancel/i.test(text))                 return 'cancelled';
+  if (/:approved:|approved|\u2705/i.test(text)) return 'approved';
+  if (/cancel/i.test(text))                     return 'cancelled';
   return 'pending';
 }
 
 function extractThreadNote(replies) {
   const human = replies.slice(1).find(r => {
     const t = extractAllText(r);
-    return r.user &&
-      t.length > 15 &&
+    return r.user && t.length > 15 &&
       !t.includes('Please review this kit request') &&
       !t.includes('marina-mpms');
   });
@@ -156,7 +125,6 @@ function buildPermalink(ts) {
   return `https://jobyaviation.slack.com/archives/${CHANNEL_ID}/p${ts.replace('.', '')}`;
 }
 
-// ── Main handler ───────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -166,66 +134,62 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Verify channel access
-    const channelInfo = await slackGet('conversations.info', { channel: CHANNEL_ID });
-    if (!channelInfo.ok) {
-      return res.status(200).json({
-        error: channelInfo.error,
-        fix: channelInfo.error === 'not_in_channel'
-          ? 'Type /invite @MPM Dashboard in #part-requests-marina'
-          : 'Check your SLACK_BOT_TOKEN in Vercel environment variables',
-      });
-    }
-
-    // Fetch messages
+    // Step 1 — fetch messages
     const messages = await fetchChannelMessages();
 
-    // Filter to kit requests
+    // Step 2 — filter to kit requests with IVJN ticket IDs
     const kitRequests = messages.filter(m => {
       const t = extractAllText(m);
-      return t.includes('IVJN-') && (
-        t.includes('Kit Request') ||
-        t.includes('Requester') ||
-        t.includes('Destination')
-      );
+      return t.includes('IVJN-');
     });
 
-    // Fetch threads in parallel (limit to 15 to avoid timeout)
-    const limited = kitRequests.slice(0, 15);
-    const threadsData = await Promise.all(
-      limited.map(msg => fetchThread(msg.ts))
-    );
+    // Step 3 — fetch threads for first 12 only to avoid timeout
+    const limited = kitRequests.slice(0, 12);
+    const threads = await Promise.all(limited.map(m => fetchThread(m.ts)));
 
-    // Filter to only messages where @marina-mpms was tagged
-    const marinaRequests = limited.filter((msg, i) => {
-      const allText = threadsData[i].map(r => extractAllText(r)).join('\n');
-      return allText.includes(MARINA_GROUP) || allText.includes('marina-mpms');
-    });
+    // Step 4 — filter to those with @marina-mpms tagged in thread
+    const marinaOnly = limited.reduce((acc, msg, i) => {
+      const threadText = threads[i].map(r => extractAllText(r)).join('\n');
+      // Check for group ID or text mention
+      if (threadText.includes(MARINA_GROUP) || threadText.includes('marina-mpms')) {
+        acc.push({ msg, replies: threads[i] });
+      }
+      return acc;
+    }, []);
 
-    // Collect all unique user IDs to resolve
-    const userIds = marinaRequests
-      .map(msg => extractRequesterId(extractAllText(msg)))
-      .filter(Boolean);
+    // Step 5 — collect user IDs to resolve (max 10)
+    const userIds = [...new Set(
+      marinaOnly
+        .map(({ msg }) => extractRequesterId(extractAllText(msg)))
+        .filter(Boolean)
+    )].slice(0, 10);
 
-    // Resolve all names in one batch
-    const userMap = await buildUserMap(userIds);
+    // Step 6 — resolve user names in parallel
+    const userMap = {};
+    await Promise.all(userIds.map(async id => {
+      try {
+        const data = await slackGet('users.info', { user: id });
+        userMap[id] = data.ok
+          ? (data.user?.profile?.display_name_normalized ||
+             data.user?.profile?.real_name ||
+             data.user?.name || id)
+          : id;
+      } catch { userMap[id] = id; }
+    }));
 
-    // Build results
-    const results = marinaRequests.map((msg, idx) => {
-      const i          = limited.indexOf(msg);
-      const replies    = threadsData[i];
-      const fullText   = extractAllText(msg);
-      const userId     = extractRequesterId(fullText);
-      const requester  = userId ? (userMap[userId] || userId) : 'Unknown';
-
+    // Step 7 — build results
+    const results = marinaOnly.map(({ msg, replies }) => {
+      const full      = extractAllText(msg);
+      const userId    = extractRequesterId(full);
+      const requester = userId ? (userMap[userId] || userId) : 'Unknown';
       return {
-        id:             extractTicketId(fullText) || msg.ts,
+        id:             extractTicketId(full) || msg.ts,
         requester,
         timestamp:      new Date(parseFloat(msg.ts) * 1000).toISOString(),
-        priority:       parsePriority(fullText),
-        warehouse:      parseLabel(fullText, 'Destination Warehouse') || '—',
-        location:       parseLabel(fullText, 'Destination Location')  || '—',
-        dateNeeded:     parseLabel(fullText, 'Date Needed')            || '—',
+        priority:       parsePriority(full),
+        warehouse:      parseLabel(full, 'Destination Warehouse') || '—',
+        location:       parseLabel(full, 'Destination Location')  || '—',
+        dateNeeded:     parseLabel(full, 'Date Needed')            || '—',
         status:         deriveStatus(replies),
         threadActivity: extractThreadNote(replies),
         threadUrl:      buildPermalink(msg.ts),
@@ -233,7 +197,7 @@ export default async function handler(req, res) {
       };
     });
 
-    // Sort by priority then date
+    // Sort: linedown first, then asap, then asready, newest first
     const order = { linedown: 0, asap: 1, asready: 2 };
     results.sort((a, b) =>
       (order[a.priority] - order[b.priority]) ||
@@ -247,7 +211,7 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    console.error(err);
+    console.error('API Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 }
