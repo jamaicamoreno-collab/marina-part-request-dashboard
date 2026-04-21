@@ -94,42 +94,64 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Step 1 — test if token works by fetching channel info
+    const channelInfo = await slackGet('conversations.info', { channel: CHANNEL_ID });
+    if (!channelInfo.ok) {
+      return res.status(200).json({
+        error: 'Cannot access channel',
+        slack_error: channelInfo.error,
+        fix: channelInfo.error === 'not_in_channel'
+          ? 'Bot needs to be invited to #part-requests-marina. Type /invite @Marina Dashboard in that channel.'
+          : channelInfo.error === 'invalid_auth'
+          ? 'SLACK_BOT_TOKEN is invalid. Check your token in Vercel environment variables.'
+          : channelInfo.error,
+      });
+    }
+
+    // Step 2 — fetch messages
     const messages = await fetchChannelMessages();
 
-    // Filter to only kit request messages
-    const kitRequests = messages.filter(m =>
-      m.text?.includes('New Kit Request')
-    );
+    // Step 3 — debug: return raw count before filtering
+    const kitRequests = messages.filter(m => m.text?.includes('New Kit Request'));
 
-    // For each message fetch thread and check if @marina-mpms was tagged
+    if (kitRequests.length === 0) {
+      return res.status(200).json({
+        debug: true,
+        message: 'Connected to Slack but no kit requests found in last 200 messages',
+        total_messages_fetched: messages.length,
+        channel: channelInfo.channel?.name,
+        requests: [],
+        fetchedAt: new Date().toISOString(),
+        total: 0,
+      });
+    }
+
+    // Step 4 — fetch threads and filter by @marina-mpms
     const results = await Promise.all(
       kitRequests.map(async (msg) => {
         const replies = await fetchThread(msg.ts);
         const allText = replies.map(r => r.text || '').join('\n');
-
-        // Only include if @marina-mpms was tagged in thread
         if (!allText.includes(MARINA_GROUP)) return null;
 
         const requesterMatch = msg.text.match(/<@[A-Z0-9]+\|([^>]+)>/);
         const requesterName  = requesterMatch?.[1] || 'Unknown';
 
         return {
-          id:          extractTicketId(msg.text) || msg.ts,
-          requester:   requesterName,
-          timestamp:   new Date(parseFloat(msg.ts) * 1000).toISOString(),
-          priority:    parsePriority(msg.text),
-          warehouse:   parseField(msg.text, 'Destination Warehouse') || '—',
-          location:    parseField(msg.text, 'Destination Location') || '—',
-          dateNeeded:  parseField(msg.text, 'Date Needed') || '—',
-          status:      deriveStatus(replies),
+          id:             extractTicketId(msg.text) || msg.ts,
+          requester:      requesterName,
+          timestamp:      new Date(parseFloat(msg.ts) * 1000).toISOString(),
+          priority:       parsePriority(msg.text),
+          warehouse:      parseField(msg.text, 'Destination Warehouse') || '—',
+          location:       parseField(msg.text, 'Destination Location') || '—',
+          dateNeeded:     parseField(msg.text, 'Date Needed') || '—',
+          status:         deriveStatus(replies),
           threadActivity: extractThreadNote(replies),
-          threadUrl:   buildPermalink(msg.ts),
-          replyCount:  replies.length - 1,
+          threadUrl:      buildPermalink(msg.ts),
+          replyCount:     replies.length - 1,
         };
       })
     );
 
-    // Filter out nulls and sort by priority then date
     const filtered = results.filter(Boolean);
     const order = { linedown: 0, asap: 1, asready: 2 };
     filtered.sort((a, b) =>
