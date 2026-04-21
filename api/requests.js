@@ -99,9 +99,9 @@ function parsePriority(text) {
 
 function deriveStatus(replies) {
   const text = replies.map(r => extractAllText(r)).join('\n').toLowerCase();
-  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier/i.test(text)) return 'done';
-  if (/:approved:|approved|\u2705/i.test(text)) return 'approved';
-  if (/cancel/i.test(text))                     return 'cancelled';
+  if (/staged|complete|courier|pick.?up rack|outbound rack|handed to courier|ready for pickup|fulfilled|it.?s out|sent out|on its way|delivered|ready to go|kitted|picked up|rack/i.test(text)) return 'done';
+  if (/:approved:|approved|\u2705|looks good|good to go|confirmed|permission granted/i.test(text)) return 'approved';
+  if (/cancel/i.test(text)) return 'cancelled';
   return 'pending';
 }
 
