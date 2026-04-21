@@ -160,14 +160,8 @@ export default function App() {
     return ()=>clearInterval(t);
   },[]);
 
-  function updateStatus(id,s){ setRows(rs=>rs.map(r=>r.id===id?{...r,status:s}:r)); }
-
-  function handleRefresh(){
-    setSyncing(true);
-    setLastSync(new Date());
-    setCountdown(300);
-    setTimeout(()=>setSyncing(false),1200);
-  }
+  function updateStatus(id, s) { setRows(rs => rs.map(r => r.id === id ? {...r, status: s} : r)); }
+  function handleRefresh() { fetchData(); }
 
   const counts = {
     all:       rows.length,

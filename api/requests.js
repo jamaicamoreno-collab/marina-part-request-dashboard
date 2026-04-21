@@ -106,8 +106,11 @@ function deriveStatus(replies) {
 }
 
 function extractThreadNote(replies) {
+  const seen = new Set();
   const human = replies.slice(1).find(r => {
     const t = extractAllText(r);
+    if (seen.has(t)) return false;
+    seen.add(t);
     return r.user &&
       t.length > 15 &&
       !t.includes('Please review this kit request') &&
