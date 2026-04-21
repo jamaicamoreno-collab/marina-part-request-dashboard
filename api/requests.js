@@ -64,11 +64,14 @@ function extractAllText(msg) {
   return parts.join('\n');
 }
 
-function extractD365Url(text) {
-  const m = text?.match(/https:\/\/joby-aviation-main\.cloud\.databricks\.com\/dashboardsv3[^\s|>"]*/);
-  return m?.[0] || null;
-}
+function extractTicketId(text) {
   return text?.match(/IVJN-\d+/i)?.[0]?.toUpperCase() || null;
+}
+
+function extractD365Url(text) {
+  if (!text) return null;
+  const m = text.match(/https:\/\/joby-aviation-main\.cloud\.databricks\.com\/dashboardsv3[^\s|>"<]*/);
+  return m?.[0] || null;
 }
 
 function extractRequesterId(text) {
@@ -100,13 +103,13 @@ function parsePriority(text) {
 }
 
 function deriveStatus(replies, originalMsg) {
-  // Check emoji reactions on the original message first
+  // Check emoji reactions on original message first
   const reactions = (originalMsg.reactions || []).map(r => r.name.toLowerCase());
-  if (reactions.some(r => ['white_check_mark','heavy_check_mark','done','approved','check','complete','checkmark','ballot_box_with_check'].includes(r))) return 'done';
+  if (reactions.some(r => ['white_check_mark','heavy_check_mark','done','complete','checkmark','ballot_box_with_check'].includes(r))) return 'done';
   if (reactions.some(r => ['approved','thumbsup','+1','yes'].includes(r))) return 'approved';
   if (reactions.some(r => ['x','no_entry','cancelled','cancel','no_entry_sign'].includes(r))) return 'cancelled';
 
-  // Then check reply text
+  // Then check reply text (skip original message)
   const replyText = replies.slice(1).map(r => extractAllText(r)).join('\n').toLowerCase();
   if (/staged|now complete|pick.?up rack|outbound rack|transfer rack|transfer pick|handed to courier|ready for pickup|fulfilled|sent out|delivered|kitted/i.test(replyText)) return 'done';
   if (/:approved:|approved|\u2705|looks good|good to go|confirmed|permission granted/i.test(replyText)) return 'approved';
@@ -153,32 +156,24 @@ export default async function handler(req, res) {
     // Filter to RNDCONSUME kit requests from last 7 days
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const rndRequests = messages.filter(m => {
-      const t  = extractAllText(m); // checks text AND blocks
+      const t  = extractAllText(m);
       const ts = parseFloat(m.ts) * 1000;
       return (t.includes('IVJN-') || JSON.stringify(m.blocks || '').includes('IVJN-')) &&
              (t.includes('RNDCONSUME') || JSON.stringify(m.blocks || '').includes('RNDCONSUME')) &&
              ts > sevenDaysAgo;
     });
 
-    // Separate pending/approved from done/cancelled
     // Always show ALL pending/approved first, then fill up to 30 with done/cancelled
-    const activeMsgs    = rndRequests.filter(m => {
+    const activeMsgs = rndRequests.filter(m => {
       const reactions = (m.reactions || []).map(r => r.name.toLowerCase());
-      const hasDoneReaction = reactions.some(r =>
-        ['white_check_mark','heavy_check_mark','done','complete','checkmark','ballot_box_with_check'].includes(r)
-      );
-      const hasCancelReaction = reactions.some(r =>
-        ['x','no_entry','cancelled','cancel','no_entry_sign'].includes(r)
-      );
-      return !hasDoneReaction && !hasCancelReaction;
+      const hasDone   = reactions.some(r => ['white_check_mark','heavy_check_mark','done','complete','checkmark','ballot_box_with_check'].includes(r));
+      const hasCancel = reactions.some(r => ['x','no_entry','cancelled','cancel','no_entry_sign'].includes(r));
+      return !hasDone && !hasCancel;
     });
     const completedMsgs = rndRequests.filter(m => !activeMsgs.includes(m));
-
-    // Take ALL active + fill remaining slots up to 30 with completed
-    const maxTotal  = 30;
-    const limited   = [
+    const limited = [
       ...activeMsgs,
-      ...completedMsgs.slice(0, Math.max(0, maxTotal - activeMsgs.length))
+      ...completedMsgs.slice(0, Math.max(0, 30 - activeMsgs.length))
     ];
 
     // Fetch threads in parallel
@@ -186,9 +181,7 @@ export default async function handler(req, res) {
 
     // Collect unique user IDs
     const userIds = [...new Set(
-      limited
-        .map(m => extractRequesterId(extractAllText(m)))
-        .filter(Boolean)
+      limited.map(m => extractRequesterId(extractAllText(m))).filter(Boolean)
     )].slice(0, 30);
 
     // Resolve user names in parallel
