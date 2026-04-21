@@ -142,10 +142,10 @@ export default async function handler(req, res) {
     // Filter to RNDCONSUME kit requests from last 7 days
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const rndRequests = messages.filter(m => {
-      const t  = extractAllText(m);
+      const t  = extractAllText(m); // checks text AND blocks
       const ts = parseFloat(m.ts) * 1000;
-      return t.includes('IVJN-') &&
-             t.includes('RNDCONSUME') &&
+      return (t.includes('IVJN-') || JSON.stringify(m.blocks || '').includes('IVJN-')) &&
+             (t.includes('RNDCONSUME') || JSON.stringify(m.blocks || '').includes('RNDCONSUME')) &&
              ts > sevenDaysAgo;
     });
 
