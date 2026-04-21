@@ -50,8 +50,31 @@ function extractTicketId(text) {
 }
 
 function parseField(text, fieldName) {
-  const re = new RegExp(`\\*${fieldName}:\\*\\s*\\n([^\\n*]+)`);
-  return text?.match(re)?.[1]?.trim() || null;
+  if (!text) return null;
+  const patterns = [
+    new RegExp(`\\*${fieldName}:\\*\\s*\\n([^\\n*<]+)`),
+    new RegExp(`${fieldName}:\\s*\\n([^\\n*<]+)`),
+    new RegExp(`\\*${fieldName}\\*:\\s*([^\\n*<]+)`),
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m?.[1]?.trim()) return m[1].trim();
+  }
+  return null;
+}
+
+function parseRequester(text) {
+  if (!text) return 'Unknown';
+  // Try display name from mention
+  const mentionMatch = text.match(/\*Requester:\*\s*\n<@[A-Z0-9]+\|([^>]+)>/);
+  if (mentionMatch) return mentionMatch[1];
+  // Try email format
+  const emailMatch = text.match(/\*Requester:\*\s*\n<mailto:[^|]+\|([^>]+)>/);
+  if (emailMatch) return emailMatch[1];
+  // Try plain text after Requester field
+  const plainMatch = text.match(/\*Requester:\*\s*\n([^\n<*]+)/);
+  if (plainMatch) return plainMatch[1].trim();
+  return 'Unknown';
 }
 
 function parsePriority(text) {
@@ -135,12 +158,9 @@ export default async function handler(req, res) {
         const allText = replies.map(r => r.text || '').join('\n');
         if (!allText.includes(MARINA_GROUP)) return null;
 
-        const requesterMatch = msg.text.match(/<@[A-Z0-9]+\|([^>]+)>/);
-        const requesterName  = requesterMatch?.[1] || 'Unknown';
-
         return {
           id:             extractTicketId(msg.text) || msg.ts,
-          requester:      requesterName,
+          requester:      parseRequester(msg.text),
           timestamp:      new Date(parseFloat(msg.ts) * 1000).toISOString(),
           priority:       parsePriority(msg.text),
           warehouse:      parseField(msg.text, 'Destination Warehouse') || '—',
