@@ -143,28 +143,18 @@ export default async function handler(req, res) {
       return t.includes('IVJN-');
     });
 
-    // Step 3 — fetch threads for first 12 only to avoid timeout
-    const limited = kitRequests.slice(0, 12);
+    // Step 3 — fetch threads for first 15 kit requests
+    const limited = kitRequests.slice(0, 15);
     const threads = await Promise.all(limited.map(m => fetchThread(m.ts)));
 
-    // Step 4 — DEBUG: check what text we find in threads
-    const debugInfo = limited.map((msg, i) => {
-      const threadText = threads[i].map(r => extractAllText(r)).join('\n');
-      return {
-        id: extractTicketId(extractAllText(msg)),
-        hasGroupId: threadText.includes(MARINA_GROUP),
-        hasMarinaText: threadText.includes('marina-mpms'),
-        threadLength: threads[i].length,
-        sampleThreadText: threadText.slice(0, 200),
-      };
-    });
-
-    return res.status(200).json({
-      debug: true,
-      totalMessages: messages.length,
-      totalKitRequests: kitRequests.length,
-      debugInfo,
-    });
+    // Step 4 — filter to RNDCONSUME destination only (these are the marina-mpms requests)
+    const marinaOnly = limited.reduce((acc, msg, i) => {
+      const fullText = extractAllText(msg);
+      if (fullText.includes('RNDCONSUME')) {
+        acc.push({ msg, replies: threads[i] });
+      }
+      return acc;
+    }, []);
 
     // Step 5 — collect user IDs to resolve (max 10)
     const userIds = [...new Set(
