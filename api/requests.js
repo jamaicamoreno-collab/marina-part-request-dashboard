@@ -70,9 +70,34 @@ function extractAllText(msg) {
   return parts.join('\n');
 }
 
+// ── User name cache ────────────────────────────────────────────────────────
+const userCache = {};
+async function resolveUserId(userId) {
+  if (!userId) return null;
+  if (userCache[userId]) return userCache[userId];
+  try {
+    const data = await slackGet('users.info', { user: userId });
+    const name = data.user?.profile?.display_name ||
+                 data.user?.profile?.real_name ||
+                 data.user?.real_name ||
+                 userId;
+    userCache[userId] = name;
+    return name;
+  } catch {
+    return userId;
+  }
+}
+
 // ── Parse helpers ──────────────────────────────────────────────────────────
 function extractTicketId(text) {
   return text?.match(/IVJN-\d+/i)?.[0]?.toUpperCase() || null;
+}
+
+function extractUserIdFromText(text) {
+  // Match <@U123ABC> format
+  const m = text?.match(/\*Requester:\*[^<]*<@([A-Z0-9]+)(?:\|[^>]*)?>/) ||
+            text?.match(/Requester[^<]*<@([A-Z0-9]+)(?:\|[^>]*)?>/);
+  return m?.[1] || null;
 }
 
 // Extract value after a label like "*Requester:*\n" or "Requester: "
@@ -180,11 +205,15 @@ export default async function handler(req, res) {
         // Only include if @marina-mpms was tagged somewhere in thread
         if (!allText.includes(MARINA_GROUP) && !allText.includes('marina-mpms')) return null;
 
-        const fullText = extractAllText(msg);
+        const fullText  = extractAllText(msg);
+        const userId    = extractUserIdFromText(fullText);
+        const requester = userId
+          ? await resolveUserId(userId)
+          : parseLabel(fullText, 'Requester') || 'Unknown';
 
         return {
           id:             extractTicketId(fullText) || msg.ts,
-          requester:      parseLabel(fullText, 'Requester')            || 'Unknown',
+          requester:      requester,
           timestamp:      new Date(parseFloat(msg.ts) * 1000).toISOString(),
           priority:       parsePriority(fullText),
           warehouse:      parseLabel(fullText, 'Destination Warehouse') || '—',
